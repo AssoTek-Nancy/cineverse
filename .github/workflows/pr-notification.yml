@@ -1,0 +1,56 @@
+name: PR Notification to Discord
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened ]
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install dependencies
+      run: npm install puppeteer
+      
+    - name: Take website screenshot
+      run: |
+        node -e "
+        const puppeteer = require('puppeteer');
+        (async () => {
+          const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+          const page = await browser.newPage();
+          await page.setViewport({ width: 1920, height: 1080 });
+          await page.goto('https://assotek-nancy.github.io/' + process.env.GITHUB_REPOSITORY.split('/')[1], { waitUntil: 'networkidle0' });
+          await page.screenshot({ path: 'preview.png', fullPage: true });
+          await browser.close();
+        })();
+        "
+        
+    - name: Send Discord notification
+      uses: sarisia/actions-status-discord@v1
+      with:
+        webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        content: |
+          🔄 **New Pull Request** - ${{ github.event.repository.name }}
+          
+          **Author:** ${{ github.event.pull_request.user.login }}
+          **Title:** ${{ github.event.pull_request.title }}
+          **Description:** ${{ github.event.pull_request.body }}
+          
+          **Preview:** https://assotek-nancy.github.io/${{ github.event.repository.name }}
+          
+          <@&PEDAGO_ROLE_ID> - Please review this PR!
+          
+          **Actions:**
+          - ✅ Accept: `/accept-pr ${{ github.event.pull_request.number }} ${{ github.event.repository.name }}`
+          - ❌ Deny: `/deny-pr ${{ github.event.pull_request.number }} ${{ github.event.repository.name }}`
+        file: preview.png
